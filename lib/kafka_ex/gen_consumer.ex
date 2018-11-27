@@ -133,7 +133,7 @@ defmodule KafkaEx.GenConsumer do
       defstruct messages: [], calls: 0
     end
 
-    def init(_topic, _partition) do
+    def init(_topic, _partition, _impl_opts) do
       {:ok, %State{}}
     end
 
@@ -216,6 +216,9 @@ defmodule KafkaEx.GenConsumer do
   `topic` and `partition` are the arguments passed to `start_link/5`. They
   identify the Kafka partition that the `KafkaEx.GenConsumer` will consume from.
 
+  `impl_opts` provides a way for implementations to receive options from the start_link
+  call. 
+
   Returning `{:ok, state}` will cause `start_link/5` to return `{:ok, pid}` and
   the process to start consuming from its assigned partition. `state` becomes
   the consumer's state.
@@ -223,7 +226,7 @@ defmodule KafkaEx.GenConsumer do
   Any other return value will cause the `start_link/5` to return `{:error,
   error}` and the process to exit.
   """
-  @callback init(topic :: binary, partition :: non_neg_integer) ::
+  @callback init(topic :: binary, partition :: non_neg_integer, impl_opts :: term) ::
     {:ok, state :: term}
 
   @doc """
@@ -279,7 +282,7 @@ defmodule KafkaEx.GenConsumer do
       @behaviour KafkaEx.GenConsumer
       alias KafkaEx.Protocol.Fetch.Message
 
-      def init(_topic, _partition) do
+      def init(_topic, _partition, _impl_opts) do
         {:ok, nil}
       end
 
@@ -334,7 +337,7 @@ defmodule KafkaEx.GenConsumer do
         {:noreply, consumer_state}
       end
 
-      defoverridable init: 2, handle_call: 3, handle_cast: 2, handle_info: 2
+      defoverridable init: 3, handle_call: 3, handle_cast: 2, handle_info: 2
     end
   end
 
@@ -459,6 +462,11 @@ defmodule KafkaEx.GenConsumer do
   # GenServer callbacks
 
   def init({consumer_module, group_name, topic, partition, opts}) do
+    impl_opts = Keyword.get(
+      opts,
+      :impl_opts,
+      []
+    )
     commit_interval = Keyword.get(
       opts,
       :commit_interval,
@@ -475,7 +483,7 @@ defmodule KafkaEx.GenConsumer do
       Application.get_env(:kafka_ex, :auto_offset_reset, @auto_offset_reset)
     )
 
-    {:ok, consumer_state} = consumer_module.init(topic, partition)
+    {:ok, consumer_state} = consumer_module.init(topic, partition, impl_opts)
     worker_opts = Keyword.take(opts, [:uris])
     {:ok, worker_name} = KafkaEx.create_worker(
       :no_name,
